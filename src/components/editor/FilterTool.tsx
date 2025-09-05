@@ -12,6 +12,7 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
+  withSequence,
   interpolate,
   runOnJS,
 } from 'react-native-reanimated';
@@ -46,45 +47,55 @@ interface FilterCategory {
 }
 
 const FILTER_CATEGORIES: FilterCategory[] = [
-  { id: 'basic', name: 'Basic', icon: '🎨' },
-  { id: 'vintage', name: 'Vintage', icon: '📷' },
-  { id: 'artistic', name: 'Artistic', icon: '🎭' },
-  { id: 'color', name: 'Color', icon: '🌈' },
-  { id: 'blackwhite', name: 'B&W', icon: '⚫' },
-  { id: 'premium', name: 'Premium', icon: '⭐' },
+  { id: 'color_balance', name: 'Color Balance', icon: '🎛️' },
+  { id: 'monochrome', name: 'Monochrome', icon: '⚫' },
+  { id: 'vintage_retro', name: 'Vintage/Retro', icon: '📷' },
+  { id: 'hdr', name: 'HDR Boost', icon: '🔆' },
+  { id: 'cinematic', name: 'Cinematic', icon: '🎬' },
+  { id: 'focus', name: 'Blur/Focus', icon: '📸' },
+  { id: 'vibrance_saturation', name: 'Vibrance & Sat', icon: '💠' },
+  { id: 'warm_cold', name: 'Warm & Cold', icon: '♨️❄️' },
+  { id: 'pop_art', name: 'Pop Art', icon: '🎨' },
+  { id: 'film_grain', name: 'Film Grain', icon: '🧵' },
 ];
 
 const FILTERS: Filter[] = [
-  // Basic Filters
-  { id: 'none', name: 'None', category: 'basic', preview: '⬜' },
-  { id: 'brightness', name: 'Brightness', category: 'basic', preview: '☀️' },
-  { id: 'contrast', name: 'Contrast', category: 'basic', preview: '🌓' },
-  { id: 'saturation', name: 'Saturation', category: 'basic', preview: '🌈' },
+  // Color Balance
+  { id: 'color_balance', name: 'Color Balance', category: 'color_balance', preview: '🎛️' },
 
-  // Vintage Filters
-  { id: 'sepia', name: 'Sepia', category: 'vintage', preview: '🏛️' },
-  { id: 'vintage_fade', name: 'Fade', category: 'vintage', preview: '📜' },
-  { id: 'warm_tone', name: 'Warm', category: 'vintage', preview: '🌅' },
+  // Monochrome
+  { id: 'bw_classic', name: 'Classic B/W', category: 'monochrome', preview: '◻️' },
+  { id: 'sepia', name: 'Sepia', category: 'monochrome', preview: '🏛️' },
+  { id: 'bw_cold', name: 'Cold Mono', category: 'monochrome', preview: '🔷' },
 
-  // Artistic Filters
-  { id: 'oil_paint', name: 'Oil Paint', category: 'artistic', preview: '🎨' },
-  { id: 'watercolor', name: 'Watercolor', category: 'artistic', preview: '💧' },
-  { id: 'sketch', name: 'Sketch', category: 'artistic', preview: '✏️' },
+  // Vintage / Retro
+  { id: 'vintage_70s', name: '70s Film', category: 'vintage_retro', preview: '📼' },
+  { id: 'retro_90s', name: '90s Retro', category: 'vintage_retro', preview: '📺' },
+  { id: 'vintage_fade', name: 'Fade', category: 'vintage_retro', preview: '📜' },
 
-  // Color Filters
-  { id: 'vivid', name: 'Vivid', category: 'color', preview: '💎' },
-  { id: 'cool_tone', name: 'Cool', category: 'color', preview: '🧊' },
-  { id: 'neon', name: 'Neon', category: 'color', preview: '⚡' },
+  // HDR Boost
+  { id: 'hdr_boost', name: 'HDR Boost', category: 'hdr', preview: '🔆' },
 
-  // Black & White
-  { id: 'grayscale', name: 'Grayscale', category: 'blackwhite', preview: '⚪' },
-  { id: 'high_contrast_bw', name: 'High Contrast', category: 'blackwhite', preview: '🔳' },
+  // Cinematic Look
+  { id: 'cinematic', name: 'Cinematic', category: 'cinematic', preview: '🎬' },
 
-  // Premium Filters
-  { id: 'cinematic', name: 'Cinematic', category: 'premium', preview: '🎬', isPremium: true },
-  { id: 'portrait_perfect', name: 'Portrait', category: 'premium', preview: '👤', isPremium: true },
-  { id: 'landscape_epic', name: 'Landscape', category: 'premium', preview: '🏔️', isPremium: true },
-  { id: 'dreamy', name: 'Dreamy', category: 'premium', preview: '💭', isPremium: true },
+  // Blur / Focus
+  { id: 'tilt_shift', name: 'Tilt-Shift', category: 'focus', preview: '📍' },
+  { id: 'soft_focus', name: 'Soft Focus', category: 'focus', preview: '🌫️' },
+
+  // Vibrance & Saturation
+  { id: 'vibrance', name: 'Vibrance', category: 'vibrance_saturation', preview: '💠' },
+  { id: 'saturation', name: 'Saturation', category: 'vibrance_saturation', preview: '🌈' },
+
+  // Warm & Cold Tone
+  { id: 'warm_tone', name: 'Warm Tone', category: 'warm_cold', preview: '🌅' },
+  { id: 'cool_tone', name: 'Cold Tone', category: 'warm_cold', preview: '🧊' },
+
+  // Pop Art / Artistic
+  { id: 'pop_art', name: 'Pop Art', category: 'pop_art', preview: '🟣' },
+
+  // Film Grain / Texture
+  { id: 'film_grain', name: 'Film Grain', category: 'film_grain', preview: '🧵' },
 ];
 
 export const FilterTool: React.FC<FilterToolProps> = ({
@@ -98,7 +109,7 @@ export const FilterTool: React.FC<FilterToolProps> = ({
   const { colors } = useTheme();
   const { reduceMotionEnabled } = useAccessibility();
 
-  const [activeCategory, setActiveCategory] = useState('basic');
+  const [activeCategory, setActiveCategory] = useState('color_balance');
   const [intensity, setIntensity] = useState(currentIntensity);
   const [appliedFilter, setAppliedFilter] = useState(selectedFilter);
 

@@ -35,6 +35,7 @@ import {
 } from '../components/editor';
 import { TYPOGRAPHY } from '../constants/typography';
 import { SPACING } from '../constants/spacing';
+import { useImagePreview } from '../hooks/useImageProcessing';
 
 const { width, height } = Dimensions.get('window');
 
@@ -80,10 +81,13 @@ export const EditorScreen: React.FC = () => {
   // Tool-specific states
   const [textElements, setTextElements] = useState<any[]>([]);
   const [appliedFilters, setAppliedFilters] = useState<any[]>([]);
+  const [pendingFilter, setPendingFilter] = useState<{ id: string; intensity: number } | null>(null);
   const [blurAreas, setBlurAreas] = useState<any[]>([]);
   const [editHistory, setEditHistory] = useState<any[]>([]);
   const [currentEditIndex, setCurrentEditIndex] = useState(-1);
   const [imageDimensions, setImageDimensions] = useState<{width: number, height: number} | null>(null);
+  // Live preview for filters
+  const { previewUri, isGenerating, generatePreview, clearPreview } = useImagePreview();
 
   // Animation values
   const toolbarTranslateY = useSharedValue(0);
@@ -441,24 +445,66 @@ export const EditorScreen: React.FC = () => {
           return (
             <FilterTool
               onFilterSelect={(filterId, intensity) => {
-                // Apply filter preview
+                setPendingFilter({ id: filterId, intensity });
+                if (currentImageUri) {
+                  generatePreview(
+                    currentImageUri,
+                    [{ type: 'filter', filterType: filterId, intensity }],
+                    { maxWidth: 600, maxHeight: 600, quality: 70 },
+                  );
+                }
               }}
               onIntensityChange={intensity => {
-                // Update filter intensity
+                setPendingFilter(prev => (prev ? { ...prev, intensity } : prev));
+                const filterId = pendingFilter?.id;
+                if (currentImageUri && filterId) {
+                  generatePreview(
+                    currentImageUri,
+                    [{ type: 'filter', filterType: filterId, intensity }],
+                    { maxWidth: 600, maxHeight: 600, quality: 70 },
+                  );
+                }
               }}
-              onApply={() => {
-                const newFilter = {
-                  id: Date.now().toString(),
-                  filterId: 'sepia',
-                  intensity: 50,
-                };
+              onApply={async () => {
+                try {
+                  const chosen = pendingFilter ?? { id: 'none', intensity: 0 };
+                  // Run through image processor for consistency with other tools
+                  const { imageProcessor } = await import('../services/imageProcessor');
 
-                setAppliedFilters(prev => [...prev, newFilter]);
-                addToHistory({ type: 'ADD_FILTER', data: newFilter });
-                setSelectedTool(null);
-                triggerHapticFeedback('heavy');
+                  const result = await imageProcessor.processImage(currentImageUri, [
+                    { type: 'filter', filterType: chosen.id, intensity: chosen.intensity },
+                  ]);
+
+                  // Update image URI if processing produced a new file
+                  if (result?.processedUri && result.processedUri !== currentImageUri) {
+                    setCurrentImageUri(result.processedUri);
+                    try {
+                      const dims = await getImageDimensions(result.processedUri);
+                      setImageDimensions(dims);
+                    } catch (_e) {}
+                  }
+
+                  const newFilterEntry = {
+                    id: Date.now().toString(),
+                    filterId: chosen.id,
+                    intensity: chosen.intensity,
+                  };
+
+                  setAppliedFilters(prev => [...prev, newFilterEntry]);
+                  addToHistory({ type: 'ADD_FILTER', data: newFilterEntry });
+                  clearPreview();
+                  setPendingFilter(null);
+                  setSelectedTool(null);
+                  triggerHapticFeedback('heavy');
+                } catch (error) {
+                  console.error('Failed to apply filter:', error);
+                }
               }}
-              onCancel={() => setSelectedTool(null)}
+              onCancel={() => {
+                clearPreview();
+                setPendingFilter(null);
+                setSelectedTool(null);
+              }}
             />
           );
 
@@ -708,7 +754,7 @@ export const EditorScreen: React.FC = () => {
           {currentImageUri ? (
             <View style={styles.imageContainer}>
               <Image
-                source={{ uri: currentImageUri }}
+                source={{ uri: previewUri || currentImageUri }}
                 style={styles.selectedImage}
                 resizeMode="contain"
               />
