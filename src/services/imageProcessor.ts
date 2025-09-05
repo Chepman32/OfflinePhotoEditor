@@ -317,38 +317,75 @@ class ImageProcessor {
   private async rotateImage(uri: string, angle: number): Promise<string> {
     console.log(`Rotating image by ${angle} degrees`);
 
+    if (angle % 360 === 0) return uri;
+
+    // Try native resizer if available
+    let ImageResizer: any = null;
     try {
-      // For now, we'll use a workaround since react-native-image-editor doesn't support rotation
-      // In a production app, you'd use a library like react-native-image-resizer or similar
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = require('react-native-image-resizer');
+      ImageResizer = mod?.default ?? mod; // support both CJS and ESM shapes
+    } catch (_e) {
+      ImageResizer = null;
+    }
 
-      if (angle === 0) {
-        return uri; // No rotation needed
+    try {
+      // Normalize input: download remote URLs to local first
+      let localUri = uri;
+      if (uri.startsWith('http://') || uri.startsWith('https://')) {
+        localUri = await this.downloadRemoteImage(uri);
       }
 
-      // Get image dimensions first
-      await this.getImageInfo(uri);
+      const info = await this.getImageInfo(localUri);
+      const swap = Math.abs(angle % 360) === 90 || Math.abs(angle % 360) === 270;
+      const targetW = swap ? info.height : info.width;
+      const targetH = swap ? info.width : info.height;
 
-      // For 90-degree rotations, we can simulate by cropping and resizing
-      // This is a simplified implementation - in production you'd use a proper rotation library
-      if (angle === 90 || angle === 180 || angle === 270) {
-        console.log(
-          `Simulating ${angle}° rotation (production would use proper rotation library)`,
+      if (ImageResizer && typeof ImageResizer.createResizedImage === 'function') {
+        // Prefer PNG if source is PNG, else JPEG
+        const format = info.format === 'png' ? 'PNG' : 'JPEG';
+        const response = await ImageResizer.createResizedImage(
+          localUri,
+          targetW,
+          targetH,
+          format,
+          100,
+          angle,
+          undefined, // outPath
+          false,
+          { mode: 'contain' },
         );
-
-        // Create a rotated filename
-        const rotatedUri = uri.replace(/(\.[^.]+)$/, `_rotated_${angle}$1`);
-
-        // Copy the file with rotation metadata (simplified approach)
-        await RNFS.copyFile(uri, rotatedUri);
-
-        console.log('Image rotation simulated:', rotatedUri);
-        return rotatedUri;
+        // Some versions return path, some return uri
+        const outUri = response.uri || response.path || response;
+        const finalUri = typeof outUri === 'string' ? outUri : outUri?.uri || outUri?.path;
+        if (!finalUri) throw new Error('Invalid resizer response');
+        return finalUri.startsWith('file://') ? finalUri : `file://${finalUri}`;
       }
 
+      // Fallback: if library not installed, at least return original to avoid blank
+      console.warn('react-native-image-resizer not installed; rotation skipped.');
       return uri;
     } catch (error) {
       console.error('Failed to rotate image:', error);
-      throw new Error(`Failed to rotate image: ${error}`);
+      // As a last resort, do a safe copy to new file so UI updates
+      try {
+        const ext = uri.includes('.') ? uri.slice(uri.lastIndexOf('.')) : '.jpg';
+        const rotatedPath = `${RNFS.CachesDirectoryPath}/rotated_${Date.now()}_${Math.abs(
+          angle,
+        )}${ext}`;
+        const from = uri.replace('file://', '');
+        if (await RNFS.exists(from)) {
+          await RNFS.copyFile(from, rotatedPath);
+        } else {
+          // If original not a local file, download first
+          const downloaded = await this.downloadRemoteImage(uri);
+          const dlPath = downloaded.replace('file://', '');
+          await RNFS.copyFile(dlPath, rotatedPath);
+        }
+        return `file://${rotatedPath}`;
+      } catch (e) {
+        throw new Error(`Failed to rotate image: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
 

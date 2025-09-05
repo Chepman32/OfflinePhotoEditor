@@ -228,7 +228,7 @@ export const EditorScreen: React.FC = () => {
     };
 
     navigation.navigate('SaveExport', {
-      editedImageUri: imageUri,
+      editedImageUri: currentImageUri,
       originalUri: imageUri,
       editData,
       hasEdits:
@@ -267,7 +267,7 @@ export const EditorScreen: React.FC = () => {
       setSelectedTool(toolId);
       
       // If crop tool is selected, get image dimensions
-      if (toolId === 'crop' && currentImageUri && !imageDimensions) {
+      if ((toolId === 'crop' || toolId === 'rotate') && currentImageUri && !imageDimensions) {
         try {
           const dimensions = await getImageDimensions(currentImageUri);
           setImageDimensions(dimensions);
@@ -526,56 +526,32 @@ export const EditorScreen: React.FC = () => {
         case 'rotate':
           return (
             <RotateTool
-              imageUri={imageUri}
-              onRotationChange={(rotation, flipH, flipV) => {
-                // Handle rotation preview changes
-                console.log('Rotation changed:', { rotation, flipH, flipV });
-              }}
-              onApply={async (rotation, flipH, flipV) => {
+              imageUri={currentImageUri}
+              onRotate={async (processedUri, finalize) => {
                 try {
-                  // Apply rotation and flip transformations using image processor
-                  const { imageProcessor } = await import(
-                    '../services/imageProcessor'
-                  );
-                  const operations = [];
+                  // Update canvas to show the rotated image
+                  setCurrentImageUri(processedUri);
+                  try {
+                    const dims = await getImageDimensions(processedUri);
+                    setImageDimensions(dims);
+                  } catch (_e) {}
 
-                  // Add rotation if needed
-                  if (rotation !== 0) {
-                    operations.push({ type: 'rotate', angle: rotation });
-                  }
+                  addToHistory({
+                    type: 'ROTATE',
+                    data: { uri: processedUri },
+                  });
 
-                  // Add flip operations if needed
-                  if (flipH) {
-                    operations.push({ type: 'flip', direction: 'horizontal' });
+                  if (finalize) {
+                    setSelectedTool(null);
+                    triggerHapticFeedback('heavy');
                   }
-                  if (flipV) {
-                    operations.push({ type: 'flip', direction: 'vertical' });
-                  }
-
-                  if (operations.length > 0) {
-                    const result = await imageProcessor.processImage(
-                      imageUri,
-                      operations,
-                    );
-                    console.log('Rotation/flip applied successfully:', result);
-                  }
-
-                  const rotationData = {
-                    rotation,
-                    flipHorizontal: flipH,
-                    flipVertical: flipV,
-                  };
-                  addToHistory({ type: 'ROTATE', data: rotationData });
-                  setSelectedTool(null);
-                  triggerHapticFeedback('heavy');
                 } catch (error) {
-                  console.error('Failed to apply rotation/flip:', error);
-                  Alert.alert(
-                    'Error',
-                    'Failed to apply rotation transformation',
-                  );
+                  console.error('Failed to apply rotation:', error);
+                  Alert.alert('Error', 'Failed to apply rotation');
                 }
               }}
+              outputWidth={imageDimensions?.width}
+              outputHeight={imageDimensions?.height}
               onCancel={() => setSelectedTool(null)}
             />
           );

@@ -1,4 +1,10 @@
 # Resolve react_native_pods.rb with node to allow for hoisting
+# Ensure Yarn PnP is respected when using Node from CocoaPods
+pnp_path = File.expand_path('../.pnp.cjs', __dir__)
+if File.exist?(pnp_path)
+  ENV['NODE_OPTIONS'] = [ENV['NODE_OPTIONS'], "-r #{pnp_path}"].compact.join(' ')
+end
+
 require Pod::Executable.execute_command('node', ['-p',
   'require.resolve(
     "react-native/scripts/react_native_pods.rb",

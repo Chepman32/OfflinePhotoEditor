@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,11 @@ import {
   Dimensions,
   TouchableOpacity,
   Alert,
+  ScrollView,
+  Image,
 } from 'react-native';
+import { CameraRoll } from '@react-native-camera-roll/camera-roll';
+import RNFS from 'react-native-fs';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import Animated, {
@@ -18,7 +22,7 @@ import Animated, {
   interpolate,
   runOnJS,
 } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../navigation/types';
 import { useTheme } from '../utils/theme';
 import { useImageProcessing } from '../hooks/useImageProcessing';
@@ -45,12 +49,17 @@ export const SaveExportScreen: React.FC = () => {
   const { preferences, updatePreferences } = useUserPreferences();
 
   const { editedImageUri, originalUri } = route.params;
+  const insets = useSafeAreaInsets();
+  const QUALITY_STEP = 5; // percent step
+  const snapQuality = (q: number) =>
+    Math.max(0, Math.min(100, Math.round(q / QUALITY_STEP) * QUALITY_STEP));
 
   const [quality, setQuality] = useState(preferences.qualityPreference || 90);
   const [format, setFormat] = useState<'jpeg' | 'png'>(preferences.formatPreference || 'jpeg');
   const [resolution, setResolution] = useState<'original' | 'hd' | '4k'>('original');
   const [saveLocation, setSaveLocation] = useState<'gallery' | 'app'>('gallery');
   const [isSuccess, setIsSuccess] = useState(false);
+  const sliderWidthRef = useRef(0);
 
   // Animation values
   const headerTranslateY = useSharedValue(-100);
@@ -153,7 +162,39 @@ export const SaveExportScreen: React.FC = () => {
 
       if (result) {
         console.log('Image processed successfully:', result);
-        setIsSuccess(true);
+
+        // Persist according to saveLocation
+        if (saveLocation === 'gallery') {
+          try {
+            const savedUri = await CameraRoll.save(result.processedUri, {
+              type: 'photo',
+              album: 'OfflinePhotoEditor',
+            });
+            console.log('Saved to gallery:', savedUri);
+            setIsSuccess(true);
+          } catch (e) {
+            console.error('Failed to save to gallery:', e);
+            Alert.alert(
+              'Save Failed',
+              'Could not save to Photos. Please allow photo library access and try again.',
+            );
+          }
+        } else {
+          // Save inside app documents for "App Folder"
+          try {
+            const ext = result.processedUri.includes('.')
+              ? result.processedUri.substring(result.processedUri.lastIndexOf('.'))
+              : '.jpg';
+            const targetPath = `${RNFS.DocumentDirectoryPath}/OfflinePhotoEditor_${Date.now()}${ext}`;
+            const from = result.processedUri.replace('file://', '');
+            await RNFS.copyFile(from, targetPath);
+            console.log('Saved to app folder:', targetPath);
+            setIsSuccess(true);
+          } catch (e) {
+            console.error('Failed to save to app folder:', e);
+            Alert.alert('Save Failed', 'Could not save to app storage.');
+          }
+        }
       } else {
         Alert.alert('Export Failed', 'Unable to process the image. Please try again.');
       }
@@ -183,20 +224,39 @@ export const SaveExportScreen: React.FC = () => {
         Quality: {quality}%
       </Text>
       <View style={styles.sliderContainer}>
-        <TouchableOpacity
+        <View
           style={[styles.sliderTrack, { backgroundColor: colors.surface }]}
-          onPress={(event) => {
-            const { locationX } = event.nativeEvent;
-            const trackWidth = width - SPACING.xl * 4;
-            const newQuality = Math.round((locationX / trackWidth) * 50 + 50);
-            setQuality(Math.max(50, Math.min(100, newQuality)));
+          onLayout={e => {
+            const w = e.nativeEvent.layout.width;
+            if (w && Math.abs(sliderWidthRef.current - w) > 1) {
+              sliderWidthRef.current = w; // do not set state to avoid re-render flicker
+            }
+          }}
+          onStartShouldSetResponder={() => true}
+          onResponderGrant={e => {
+            const w = Math.max(1, sliderWidthRef.current);
+            const x = Math.max(0, Math.min(e.nativeEvent.locationX, w));
+            const q = Math.round((x / w) * 100);
+            setQuality(snapQuality(q));
+          }}
+          onResponderMove={e => {
+            const w = Math.max(1, sliderWidthRef.current);
+            const x = Math.max(0, Math.min(e.nativeEvent.locationX, w));
+            const q = Math.round((x / w) * 100);
+            setQuality(snapQuality(q));
+          }}
+          onResponderRelease={e => {
+            const w = Math.max(1, sliderWidthRef.current);
+            const x = Math.max(0, Math.min(e.nativeEvent.locationX, w));
+            const q = Math.round((x / w) * 100);
+            setQuality(snapQuality(q));
           }}
         >
           <View
             style={[
               styles.sliderFill,
               {
-                width: `${((quality - 50) / 50) * 100}%`,
+                width: `${quality}%`,
                 backgroundColor: colors.primary,
               },
             ]}
@@ -205,15 +265,15 @@ export const SaveExportScreen: React.FC = () => {
             style={[
               styles.sliderThumb,
               {
-                left: `${((quality - 50) / 50) * 100}%`,
+                left: `${quality}%`,
                 backgroundColor: colors.primary,
               },
             ]}
           />
-        </TouchableOpacity>
+        </View>
       </View>
       <View style={styles.sliderLabels}>
-        <Text style={[styles.sliderLabel, { color: colors.onSurface }]}>50%</Text>
+        <Text style={[styles.sliderLabel, { color: colors.onSurface }]}>0%</Text>
         <Text style={[styles.sliderLabel, { color: colors.onSurface }]}>100%</Text>
       </View>
     </Card>
@@ -396,41 +456,57 @@ export const SaveExportScreen: React.FC = () => {
 
       {/* Content */}
       <Animated.View style={[styles.content, contentAnimatedStyle]}>
-        {/* Preview */}
-        <Card style={styles.previewCard}>
-          <View style={styles.previewImage}>
-            <Text style={styles.previewPlaceholder}>🖼️</Text>
-          </View>
-          <Text style={[styles.previewText, { color: colors.onBackground }]}>
-            Preview
-          </Text>
-        </Card>
-
-        {/* Options */}
-        <View style={styles.optionsContainer}>
-          {renderQualitySlider()}
-          {renderFormatSelector()}
-          {renderResolutionSelector()}
-          {renderSaveLocation()}
-        </View>
-
-        {/* Export Progress */}
-        {isProcessing && (
-          <Card style={styles.progressCard}>
-            <Text style={[styles.progressTitle, { color: colors.onBackground }]}>
-              {currentOperation || 'Processing...'} {Math.round(progress)}%
-            </Text>
-            <View style={[styles.progressTrack, { backgroundColor: colors.surface }]}>
-              <Animated.View
-                style={[
-                  styles.progressFill,
-                  progressAnimatedStyle,
-                  { backgroundColor: colors.primary },
-                ]}
-              />
+        <ScrollView
+          contentContainerStyle={{
+            padding: SPACING.lg,
+            paddingBottom: SPACING.lg + insets.bottom + 96, // leave room for sticky action button
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Preview */}
+          <Card style={styles.previewCard}>
+            <View style={styles.previewImageArea}>
+              {(editedImageUri || originalUri) ? (
+                <Image
+                  source={{ uri: editedImageUri || originalUri }}
+                  style={styles.previewPicture}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={styles.previewPlaceholderBox}>
+                  <Text style={styles.previewPlaceholder}>🖼️</Text>
+                </View>
+              )}
             </View>
+            <Text style={[styles.previewText, { color: colors.onBackground }]}>Preview</Text>
           </Card>
-        )}
+
+          {/* Options */}
+          <View style={styles.optionsContainer}>
+            {renderQualitySlider()}
+            {renderFormatSelector()}
+            {renderResolutionSelector()}
+            {renderSaveLocation()}
+          </View>
+
+          {/* Export Progress */}
+          {isProcessing && (
+            <Card style={styles.progressCard}>
+              <Text style={[styles.progressTitle, { color: colors.onBackground }]}>
+                {currentOperation || 'Processing...'} {Math.round(progress)}%
+              </Text>
+              <View style={[styles.progressTrack, { backgroundColor: colors.surface }]}>
+                <Animated.View
+                  style={[
+                    styles.progressFill,
+                    progressAnimatedStyle,
+                    { backgroundColor: colors.primary },
+                  ]}
+                />
+              </View>
+            </Card>
+          )}
+        </ScrollView>
       </Animated.View>
 
       {/* Action Button */}
@@ -494,21 +570,31 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: SPACING.lg,
   },
   previewCard: {
     alignItems: 'center',
     padding: SPACING.lg,
     marginBottom: SPACING.lg,
   },
-  previewImage: {
-    width: 120,
-    height: 120,
+  previewImageArea: {
+    width: '100%',
+    height: 240,
     backgroundColor: '#f5f5f5',
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: SPACING.md,
+    overflow: 'hidden',
+  },
+  previewPicture: {
+    width: '100%',
+    height: '100%',
+  },
+  previewPlaceholderBox: {
+    width: 120,
+    height: 120,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   previewPlaceholder: {
     fontSize: 40,

@@ -4,7 +4,7 @@ import { ColorScheme } from '../../constants/colors';
 export interface UserPreferences {
   theme: ColorScheme;
   lastUsedTools: string[];
-  qualityPreference: number; // 50-100
+  qualityPreference: number; // 0-100
   formatPreference: 'jpeg' | 'png';
   hapticFeedback: boolean;
   soundEffects: boolean;
@@ -30,7 +30,7 @@ const userPreferencesSlice = createSlice({
       state.theme = state.theme === 'light' ? 'dark' : 'light';
     },
     setQualityPreference: (state, action: PayloadAction<number>) => {
-      state.qualityPreference = Math.max(50, Math.min(100, action.payload));
+      state.qualityPreference = Math.max(0, Math.min(100, action.payload));
     },
     setFormatPreference: (state, action: PayloadAction<'jpeg' | 'png'>) => {
       state.formatPreference = action.payload;
