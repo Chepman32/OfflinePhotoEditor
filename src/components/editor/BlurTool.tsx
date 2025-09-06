@@ -1,74 +1,68 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   Dimensions,
+  Image,
+  PanResponder,
 } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  interpolate,
-} from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withSequence } from 'react-native-reanimated';
 import { useTheme } from '../../utils/theme';
 import { triggerHapticFeedback, useAccessibility } from '../../utils/accessibility';
 import { ElevatedButton } from '../common/ElevatedButton';
 import { Card } from '../common/Card';
 import { TYPOGRAPHY } from '../../constants/typography';
 import { SPACING } from '../../constants/spacing';
+import { MaskedBlurPreview } from './MaskedBlurPreview';
 
 const { width } = Dimensions.get('window');
 
 interface BlurToolProps {
-  initialBrushSize?: number;
+  imageUri: string;
+  imageWidth: number; // display size on stage
+  imageHeight: number; // display size on stage
+  actualImageWidth?: number; // for conversion when applying, optional
+  actualImageHeight?: number;
   initialIntensity?: number;
-  onBrushSizeChange: (size: number) => void;
-  onIntensityChange: (intensity: number) => void;
-  onUndo: () => void;
-  onApply: () => void;
+  onApply: (data: { x: number; y: number; width: number; height: number; intensity: number }) => void;
   onCancel: () => void;
 }
 
 export const BlurTool: React.FC<BlurToolProps> = ({
-  initialBrushSize = 25,
+  imageUri,
+  imageWidth,
+  imageHeight,
+  actualImageWidth,
+  actualImageHeight,
   initialIntensity = 50,
-  onBrushSizeChange,
-  onIntensityChange,
-  onUndo,
   onApply,
   onCancel,
 }) => {
   const { colors } = useTheme();
   const { reduceMotionEnabled } = useAccessibility();
 
-  const [brushSize, setBrushSize] = useState(initialBrushSize);
   const [intensity, setIntensity] = useState(initialIntensity);
+  // Selection rectangle (like Crop)
+  const initialRect = {
+    x: imageWidth * 0.2,
+    y: imageHeight * 0.2,
+    width: imageWidth * 0.6,
+    height: imageHeight * 0.5,
+  };
+  const selX = useSharedValue(initialRect.x);
+  const selY = useSharedValue(initialRect.y);
+  const selW = useSharedValue(initialRect.width);
+  const selH = useSharedValue(initialRect.height);
+  const [rect, setRect] = useState(initialRect);
 
   // Animation values
-  const brushPreviewScale = useSharedValue(1);
   const intensityIndicatorOpacity = useSharedValue(1);
-
-  const handleBrushSizeChange = (size: number) => {
-    const newSize = Math.max(5, Math.min(50, size));
-    setBrushSize(newSize);
-    onBrushSizeChange(newSize);
-    triggerHapticFeedback('light');
-
-    if (!reduceMotionEnabled) {
-      brushPreviewScale.value = withSequence(
-        withSpring(1.2, { damping: 8, stiffness: 300 }),
-        withSpring(1, { damping: 12, stiffness: 200 })
-      );
-    }
-  };
 
   const handleIntensityChange = (newIntensity: number) => {
     const clampedIntensity = Math.max(0, Math.min(100, newIntensity));
     setIntensity(clampedIntensity);
-    onIntensityChange(clampedIntensity);
     triggerHapticFeedback('light');
 
     intensityIndicatorOpacity.value = withSequence(
@@ -77,126 +71,93 @@ export const BlurTool: React.FC<BlurToolProps> = ({
     );
   };
 
-  const handleUndoPress = () => {
-    onUndo();
-    triggerHapticFeedback('medium');
-  };
-
-  const brushPreviewStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: brushPreviewScale.value }],
-  }));
-
   const intensityIndicatorStyle = useAnimatedStyle(() => ({
     opacity: intensityIndicatorOpacity.value,
   }));
 
-  const getIntensityColor = () => {
-    const alpha = intensity / 100;
-    return `rgba(100, 149, 237, ${alpha})`; // Cornflower blue with varying opacity
+  // Stage overlay styles
+  const overlayStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: selX.value }, { translateY: selY.value }],
+    width: selW.value,
+    height: selH.value,
+  }));
+
+  // Drag to move selection
+  const dragStart = useRef({ x: 0, y: 0 }).current;
+  const dragResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        dragStart.x = selX.value;
+        dragStart.y = selY.value;
+      },
+      onPanResponderMove: (_evt, gesture) => {
+        const nx = Math.max(0, Math.min(dragStart.x + gesture.dx, imageWidth - selW.value));
+        const ny = Math.max(0, Math.min(dragStart.y + gesture.dy, imageHeight - selH.value));
+        selX.value = nx;
+        selY.value = ny;
+        setRect(r => ({ ...r, x: nx, y: ny }));
+      },
+    })
+  ).current;
+
+  // Corner handles to resize
+  const sizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 }).current;
+  const MIN_SIZE = 40;
+  const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(v, max));
+  const corner = (name: 'tl'|'tr'|'bl'|'br') => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onPanResponderGrant: () => {
+      sizeStart.x = selX.value; sizeStart.y = selY.value; sizeStart.w = selW.value; sizeStart.h = selH.value;
+    },
+    onPanResponderMove: (_e, g) => {
+      let nx = sizeStart.x, ny = sizeStart.y, nw = sizeStart.w, nh = sizeStart.h;
+      if (name === 'br') { nw = clamp(sizeStart.w + g.dx, MIN_SIZE, imageWidth - sizeStart.x); nh = clamp(sizeStart.h + g.dy, MIN_SIZE, imageHeight - sizeStart.y); }
+      if (name === 'bl') { nx = clamp(sizeStart.x + g.dx, 0, sizeStart.x + sizeStart.w - MIN_SIZE); nw = clamp(sizeStart.w - (nx - sizeStart.x), MIN_SIZE, imageWidth); nh = clamp(sizeStart.h + g.dy, MIN_SIZE, imageHeight - sizeStart.y); }
+      if (name === 'tr') { ny = clamp(sizeStart.y + g.dy, 0, sizeStart.y + sizeStart.h - MIN_SIZE); nh = clamp(sizeStart.h - (ny - sizeStart.y), MIN_SIZE, imageHeight); nw = clamp(sizeStart.w + g.dx, MIN_SIZE, imageWidth - sizeStart.x); }
+      if (name === 'tl') { nx = clamp(sizeStart.x + g.dx, 0, sizeStart.x + sizeStart.w - MIN_SIZE); ny = clamp(sizeStart.y + g.dy, 0, sizeStart.y + sizeStart.h - MIN_SIZE); nw = clamp(sizeStart.w - (nx - sizeStart.x), MIN_SIZE, imageWidth); nh = clamp(sizeStart.h - (ny - sizeStart.y), MIN_SIZE, imageHeight); }
+      // Ensure inside bounds
+      nx = clamp(nx, 0, imageWidth - nw); ny = clamp(ny, 0, imageHeight - nh);
+      selX.value = nx; selY.value = ny; selW.value = nw; selH.value = nh;
+      setRect({ x: nx, y: ny, width: nw, height: nh });
+    }
+  });
+  const tl = useRef(corner('tl')).current;
+  const tr = useRef(corner('tr')).current;
+  const bl = useRef(corner('bl')).current;
+  const br = useRef(corner('br')).current;
+
+  const toApplyData = () => {
+    const sx = actualImageWidth ? actualImageWidth / imageWidth : 1;
+    const sy = actualImageHeight ? actualImageHeight / imageHeight : 1;
+    return {
+      x: Math.round(selX.value * sx),
+      y: Math.round(selY.value * sy),
+      width: Math.round(selW.value * sx),
+      height: Math.round(selH.value * sy),
+      intensity,
+    };
   };
 
   return (
     <View style={styles.container}>
-      {/* Brush Preview */}
-      <Card style={styles.previewCard}>
-        <Text style={[styles.previewTitle, { color: colors.onBackground }]}>
-          Brush Preview
-        </Text>
-        <View style={styles.previewContainer}>
-          <Animated.View
-            style={[
-              styles.brushPreview,
-              {
-                width: brushSize * 2,
-                height: brushSize * 2,
-                borderRadius: brushSize,
-                backgroundColor: getIntensityColor(),
-              },
-              brushPreviewStyle,
-            ]}
-          >
-            <View
-              style={[
-                styles.brushCenter,
-                {
-                  width: brushSize * 0.3,
-                  height: brushSize * 0.3,
-                  borderRadius: brushSize * 0.15,
-                  backgroundColor: colors.primary,
-                },
-              ]}
-            />
+      {/* Stage with image and live masked blur */}
+      <View style={styles.stageCard}>
+        <View style={[styles.stage, { width: imageWidth, height: imageHeight }]}>
+          <Image source={{ uri: imageUri }} style={styles.stageImage} resizeMode="contain" />
+          <MaskedBlurPreview uri={imageUri} rect={rect} intensity={intensity} />
+
+          {/* Selection overlay */}
+          <Animated.View style={[styles.selection, overlayStyle]} {...dragResponder.panHandlers}>
+            <View style={styles.selectionFrame} />
+            {/* Handles */}
+            <View style={[styles.handle, styles.tl]} {...tl.panHandlers} />
+            <View style={[styles.handle, styles.tr]} {...tr.panHandlers} />
+            <View style={[styles.handle, styles.bl]} {...bl.panHandlers} />
+            <View style={[styles.handle, styles.br]} {...br.panHandlers} />
           </Animated.View>
         </View>
-        <Text style={[styles.previewStats, { color: colors.onSurface }]}>
-          Size: {brushSize}px • Intensity: {intensity}%
-        </Text>
-      </Card>
-
-      {/* Brush Size Control */}
-      <Card style={styles.controlCard}>
-        <Text style={[styles.controlTitle, { color: colors.onBackground }]}>
-          Brush Size: {brushSize}px
-        </Text>
-        <View style={styles.sliderContainer}>
-          <TouchableOpacity
-            style={[styles.sliderTrack, { backgroundColor: colors.surface }]}
-            onPress={(event) => {
-              const { locationX } = event.nativeEvent;
-              const trackWidth = width - SPACING.xl * 4;
-              const newSize = Math.round((locationX / trackWidth) * 45 + 5);
-              handleBrushSizeChange(newSize);
-            }}
-          >
-            <View
-              style={[
-                styles.sliderFill,
-                {
-                  width: `${((brushSize - 5) / 45) * 100}%`,
-                  backgroundColor: colors.primary,
-                },
-              ]}
-            />
-            <View
-              style={[
-                styles.sliderThumb,
-                {
-                  left: `${((brushSize - 5) / 45) * 100}%`,
-                  backgroundColor: colors.primary,
-                },
-              ]}
-            />
-          </TouchableOpacity>
-        </View>
-        <View style={styles.sliderLabels}>
-          <Text style={[styles.sliderLabel, { color: colors.onSurface }]}>5px</Text>
-          <Text style={[styles.sliderLabel, { color: colors.onSurface }]}>50px</Text>
-        </View>
-
-        {/* Quick Size Buttons */}
-        <View style={styles.quickButtons}>
-          {[10, 25, 40].map((size) => (
-            <TouchableOpacity
-              key={size}
-              style={[
-                styles.quickButton,
-                { backgroundColor: colors.surface },
-                brushSize === size && [styles.quickButtonActive, { backgroundColor: colors.primary }],
-              ]}
-              onPress={() => handleBrushSizeChange(size)}
-            >
-              <Text
-                style={[
-                  styles.quickButtonText,
-                  { color: brushSize === size ? colors.onPrimary : colors.onBackground },
-                ]}
-              >
-                {size}px
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </Card>
+      </View>
 
       {/* Intensity Control */}
       <Card style={styles.controlCard}>
@@ -257,19 +218,6 @@ export const BlurTool: React.FC<BlurToolProps> = ({
         </View>
       </Card>
 
-      {/* Undo Button */}
-      <Card style={styles.undoCard}>
-        <TouchableOpacity
-          style={[styles.undoButton, { backgroundColor: colors.surface }]}
-          onPress={handleUndoPress}
-        >
-          <Text style={styles.undoIcon}>↶</Text>
-          <Text style={[styles.undoText, { color: colors.onBackground }]}>
-            Undo Last Stroke
-          </Text>
-        </TouchableOpacity>
-      </Card>
-
       {/* Action Buttons */}
       <View style={styles.actionButtons}>
         <TouchableOpacity
@@ -283,7 +231,7 @@ export const BlurTool: React.FC<BlurToolProps> = ({
 
         <ElevatedButton
           title="Apply Blur"
-          onPress={onApply}
+          onPress={() => onApply(toApplyData())}
           style={styles.applyButton}
         />
       </View>
@@ -296,39 +244,24 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: SPACING.md,
   },
-  previewCard: {
+  stageCard: {
     alignItems: 'center',
-    padding: SPACING.lg,
-    marginBottom: SPACING.md,
+    padding: SPACING.md,
   },
-  previewTitle: {
-    ...TYPOGRAPHY.body1,
-    fontWeight: '600',
-    marginBottom: SPACING.md,
-  },
-  previewContainer: {
-    width: 150,
-    height: 150,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+  stage: {
+    position: 'relative',
+    overflow: 'hidden',
+    backgroundColor: '#000',
     borderRadius: 8,
-    marginBottom: SPACING.md,
   },
-  brushPreview: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#ddd',
-  },
-  brushCenter: {
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  previewStats: {
-    ...TYPOGRAPHY.caption,
-    textAlign: 'center',
-  },
+  stageImage: { width: '100%', height: '100%' },
+  selection: { position: 'absolute' },
+  selectionFrame: { flex: 1, borderWidth: 2, borderColor: '#FFFFFF99' },
+  handle: { position: 'absolute', width: 20, height: 20, backgroundColor: '#fff' },
+  tl: { top: -10, left: -10 },
+  tr: { top: -10, right: -10 },
+  bl: { bottom: -10, left: -10 },
+  br: { bottom: -10, right: -10 },
   controlCard: {
     padding: SPACING.lg,
     marginBottom: SPACING.md,

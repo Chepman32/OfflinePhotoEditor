@@ -28,11 +28,14 @@ import { IconButton } from '../components/common/IconButton';
 import { Toolbar } from '../components/common/Toolbar';
 import {
   TextTool,
-  BlurTool,
   FilterTool,
   CropTool,
   RotateTool,
 } from '../components/editor';
+import { BlurTool as BlurToolComponent } from '../components/editor/BlurTool';
+import { FilteredPreview } from '../components/editor/FilteredPreview';
+import { FilteredExtractor } from '../components/editor/FilteredExtractor';
+import { MaskedBlurExtractor } from '../components/editor/MaskedBlurExtractor';
 import { TYPOGRAPHY } from '../constants/typography';
 import { SPACING } from '../constants/spacing';
 import { useImagePreview } from '../hooks/useImageProcessing';
@@ -82,6 +85,8 @@ export const EditorScreen: React.FC = () => {
   const [textElements, setTextElements] = useState<any[]>([]);
   const [appliedFilters, setAppliedFilters] = useState<any[]>([]);
   const [pendingFilter, setPendingFilter] = useState<{ id: string; intensity: number } | null>(null);
+  const [extractingFilter, setExtractingFilter] = useState<{ id: string; intensity: number } | null>(null);
+  const [extractingBlur, setExtractingBlur] = useState<{ rect: { x: number; y: number; width: number; height: number }; intensity: number } | null>(null);
   const [blurAreas, setBlurAreas] = useState<any[]>([]);
   const [editHistory, setEditHistory] = useState<any[]>([]);
   const [currentEditIndex, setCurrentEditIndex] = useState(-1);
@@ -100,7 +105,7 @@ export const EditorScreen: React.FC = () => {
 
   useEffect(() => {
     startAnimations();
-  }, []);
+  }, [startAnimations]);
 
   useEffect(() => {
     if (selectedTool) {
@@ -116,7 +121,7 @@ export const EditorScreen: React.FC = () => {
       });
       setTimeout(() => setShowToolOptions(false), 300);
     }
-  }, [selectedTool]);
+  }, [selectedTool, toolOptionsTranslateY]);
 
   const startAnimations = () => {
     // Initial animations
@@ -270,8 +275,8 @@ export const EditorScreen: React.FC = () => {
     } else {
       setSelectedTool(toolId);
       
-      // If crop tool is selected, get image dimensions
-      if ((toolId === 'crop' || toolId === 'rotate') && currentImageUri && !imageDimensions) {
+      // If crop/rotate/blur tool is selected, get image dimensions
+      if ((toolId === 'crop' || toolId === 'rotate' || toolId === 'blur') && currentImageUri && !imageDimensions) {
         try {
           const dimensions = await getImageDimensions(currentImageUri);
           setImageDimensions(dimensions);
@@ -410,95 +415,29 @@ export const EditorScreen: React.FC = () => {
           );
 
         case 'blur':
-          return (
-            <BlurTool
-              onBrushSizeChange={size => {
-                // Update current brush size
-              }}
-              onIntensityChange={intensity => {
-                // Update blur intensity
-              }}
-              onUndo={() => {
-                // Remove last blur stroke
-                if (blurAreas.length > 0) {
-                  setBlurAreas(prev => prev.slice(0, -1));
-                }
-              }}
-              onApply={() => {
-                const newBlurArea = {
-                  id: Date.now().toString(),
-                  brushSize: 25,
-                  intensity: 50,
-                  strokes: [],
-                };
-
-                setBlurAreas(prev => [...prev, newBlurArea]);
-                addToHistory({ type: 'ADD_BLUR', data: newBlurArea });
-                setSelectedTool(null);
-                triggerHapticFeedback('heavy');
-              }}
-              onCancel={() => setSelectedTool(null)}
-            />
-          );
+          // Blur tool is handled as overlay on canvas, no bottom panel needed
+          return null;
 
         case 'filters':
           return (
             <FilterTool
+              imageUri={currentImageUri}
               onFilterSelect={(filterId, intensity) => {
                 setPendingFilter({ id: filterId, intensity });
-                if (currentImageUri) {
-                  generatePreview(
-                    currentImageUri,
-                    [{ type: 'filter', filterType: filterId, intensity }],
-                    { maxWidth: 600, maxHeight: 600, quality: 70 },
-                  );
-                }
+                // Live preview handled by FilteredPreview; no need to generate low-res preview here
               }}
               onIntensityChange={intensity => {
                 setPendingFilter(prev => (prev ? { ...prev, intensity } : prev));
-                const filterId = pendingFilter?.id;
-                if (currentImageUri && filterId) {
-                  generatePreview(
-                    currentImageUri,
-                    [{ type: 'filter', filterType: filterId, intensity }],
-                    { maxWidth: 600, maxHeight: 600, quality: 70 },
-                  );
-                }
+                // Live preview handled by FilteredPreview
               }}
               onApply={async () => {
-                try {
-                  const chosen = pendingFilter ?? { id: 'none', intensity: 0 };
-                  // Run through image processor for consistency with other tools
-                  const { imageProcessor } = await import('../services/imageProcessor');
-
-                  const result = await imageProcessor.processImage(currentImageUri, [
-                    { type: 'filter', filterType: chosen.id, intensity: chosen.intensity },
-                  ]);
-
-                  // Update image URI if processing produced a new file
-                  if (result?.processedUri && result.processedUri !== currentImageUri) {
-                    setCurrentImageUri(result.processedUri);
-                    try {
-                      const dims = await getImageDimensions(result.processedUri);
-                      setImageDimensions(dims);
-                    } catch (_e) {}
-                  }
-
-                  const newFilterEntry = {
-                    id: Date.now().toString(),
-                    filterId: chosen.id,
-                    intensity: chosen.intensity,
-                  };
-
-                  setAppliedFilters(prev => [...prev, newFilterEntry]);
-                  addToHistory({ type: 'ADD_FILTER', data: newFilterEntry });
-                  clearPreview();
-                  setPendingFilter(null);
+                const chosen = pendingFilter ?? { id: 'none', intensity: 0 };
+                if (!currentImageUri || chosen.id === 'none') {
                   setSelectedTool(null);
-                  triggerHapticFeedback('heavy');
-                } catch (error) {
-                  console.error('Failed to apply filter:', error);
+                  return;
                 }
+                // Trigger hidden extraction, handled below in a hidden component
+                setExtractingFilter({ id: chosen.id, intensity: chosen.intensity });
               }}
               onCancel={() => {
                 clearPreview();
@@ -506,7 +445,7 @@ export const EditorScreen: React.FC = () => {
                 setSelectedTool(null);
               }}
             />
-          );
+        );
 
         case 'crop':
           return (
@@ -753,11 +692,19 @@ export const EditorScreen: React.FC = () => {
           {/* Selected Image */}
           {currentImageUri ? (
             <View style={styles.imageContainer}>
-              <Image
-                source={{ uri: previewUri || currentImageUri }}
-                style={styles.selectedImage}
-                resizeMode="contain"
-              />
+              {pendingFilter ? (
+                <FilteredPreview
+                  uri={currentImageUri}
+                  filterId={pendingFilter.id}
+                  intensity={pendingFilter.intensity}
+                />
+              ) : (
+                <Image
+                  source={{ uri: previewUri || currentImageUri }}
+                  style={styles.selectedImage}
+                  resizeMode="contain"
+                />
+              )}
 
               {/* Text Elements Overlay */}
               {textElements.map(textElement => (
@@ -806,6 +753,27 @@ export const EditorScreen: React.FC = () => {
                   >
                     Blur Applied
                   </Text>
+                </View>
+              )}
+
+              {/* Blur Tool Overlay */}
+              {selectedTool === 'blur' && currentImageUri && imageDimensions && (
+                <View style={styles.blurToolOverlay}>
+                  <BlurToolComponent
+                    imageUri={currentImageUri}
+                    imageWidth={width * 0.8}
+                    imageHeight={height * 0.6}
+                    actualImageWidth={imageDimensions.width}
+                    actualImageHeight={imageDimensions.height}
+                    onApply={(data) => {
+                      const newArea = { id: Date.now().toString(), ...data };
+                      setBlurAreas(prev => [...prev, newArea]);
+                      addToHistory({ type: 'ADD_BLUR', data: newArea });
+                      // Bake final image via extractor component mounted below
+                      setExtractingBlur({ rect: { x: data.x, y: data.y, width: data.width, height: data.height }, intensity: data.intensity });
+                    }}
+                    onCancel={() => setSelectedTool(null)}
+                  />
                 </View>
               )}
             </View>
@@ -878,6 +846,69 @@ export const EditorScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Hidden extractor to bake filter on Apply */}
+      {extractingFilter && currentImageUri ? (
+        <FilteredExtractor
+          uri={currentImageUri}
+          filterId={extractingFilter.id}
+          intensity={extractingFilter.intensity}
+          onDone={async (uri) => {
+            try {
+              setCurrentImageUri(uri);
+              try {
+                const dims = await getImageDimensions(uri);
+                setImageDimensions(dims);
+              } catch (_e) {}
+              const entry = {
+                id: Date.now().toString(),
+                filterId: extractingFilter.id,
+                intensity: extractingFilter.intensity,
+              };
+              setAppliedFilters(prev => [...prev, entry]);
+              addToHistory({ type: 'ADD_FILTER', data: entry });
+            } finally {
+              setExtractingFilter(null);
+              clearPreview();
+              setPendingFilter(null);
+              setSelectedTool(null);
+              triggerHapticFeedback('heavy');
+            }
+          }}
+          onError={(msg) => {
+            console.error('Filter extraction error:', msg);
+            setExtractingFilter(null);
+            Alert.alert('Filter Error', msg || 'Failed to apply filter');
+          }}
+        />
+      ) : null}
+
+      {/* Hidden extractor to bake masked blur on Apply */}
+      {extractingBlur && currentImageUri ? (
+        <MaskedBlurExtractor
+          uri={currentImageUri}
+          rect={extractingBlur.rect}
+          intensity={extractingBlur.intensity}
+          onDone={async (uri) => {
+            try {
+              setCurrentImageUri(uri);
+              try {
+                const dims = await getImageDimensions(uri);
+                setImageDimensions(dims);
+              } catch (_e) {}
+            } finally {
+              setExtractingBlur(null);
+              setSelectedTool(null);
+              triggerHapticFeedback('heavy');
+            }
+          }}
+          onError={(msg) => {
+            console.error('Masked blur extraction error:', msg);
+            Alert.alert('Blur Error', msg || 'Failed to apply blur');
+            setExtractingBlur(null);
+          }}
+        />
+      ) : null}
 
       {/* Tool Categories Bar */}
       <Animated.View
@@ -1182,5 +1213,15 @@ const styles = StyleSheet.create({
   // Adjust tool styles
   adjustTool: {
     padding: SPACING.lg,
+  },
+  blurToolOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
