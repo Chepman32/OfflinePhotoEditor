@@ -3,3 +3,7 @@ export { BlurTool } from './BlurTool';
 export { FilterTool } from './FilterTool';
 export { CropTool } from './CropTool';
 export { RotateTool } from './RotateTool';
+export { FilteredPreview } from './FilteredPreview';
+export { FilteredExtractor } from './FilteredExtractor';
+export { MaskedBlurPreview } from './MaskedBlurPreview';
+export { MaskedBlurExtractor } from './MaskedBlurExtractor';

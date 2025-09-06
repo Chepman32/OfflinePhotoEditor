@@ -12,6 +12,8 @@ export type RootStackParamList = {
   SaveExport: {
     editedImageUri: string;
     originalUri: string;
+    editData?: any;
+    hasEdits?: boolean;
   };
   Premium: undefined;
   Settings: undefined;

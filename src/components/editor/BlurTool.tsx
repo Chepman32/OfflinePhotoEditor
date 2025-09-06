@@ -8,9 +8,18 @@ import {
   Image,
   PanResponder,
 } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withSequence } from 'react-native-reanimated';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  withSequence,
+} from 'react-native-reanimated';
 import { useTheme } from '../../utils/theme';
-import { triggerHapticFeedback, useAccessibility } from '../../utils/accessibility';
+import {
+  triggerHapticFeedback,
+  useAccessibility,
+} from '../../utils/accessibility';
 import { ElevatedButton } from '../common/ElevatedButton';
 import { Card } from '../common/Card';
 import { TYPOGRAPHY } from '../../constants/typography';
@@ -26,7 +35,13 @@ interface BlurToolProps {
   actualImageWidth?: number; // for conversion when applying, optional
   actualImageHeight?: number;
   initialIntensity?: number;
-  onApply: (data: { x: number; y: number; width: number; height: number; intensity: number }) => void;
+  onApply: (data: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    intensity: number;
+  }) => void;
   onCancel: () => void;
 }
 
@@ -36,7 +51,7 @@ export const BlurTool: React.FC<BlurToolProps> = ({
   imageHeight,
   actualImageWidth,
   actualImageHeight,
-  initialIntensity = 50,
+  initialIntensity = 20,
   onApply,
   onCancel,
 }) => {
@@ -67,7 +82,7 @@ export const BlurTool: React.FC<BlurToolProps> = ({
 
     intensityIndicatorOpacity.value = withSequence(
       withTiming(0.7, { duration: 100 }),
-      withTiming(1, { duration: 100 })
+      withTiming(1, { duration: 100 }),
     );
   };
 
@@ -92,36 +107,86 @@ export const BlurTool: React.FC<BlurToolProps> = ({
         dragStart.y = selY.value;
       },
       onPanResponderMove: (_evt, gesture) => {
-        const nx = Math.max(0, Math.min(dragStart.x + gesture.dx, imageWidth - selW.value));
-        const ny = Math.max(0, Math.min(dragStart.y + gesture.dy, imageHeight - selH.value));
+        const nx = Math.max(
+          0,
+          Math.min(dragStart.x + gesture.dx, imageWidth - selW.value),
+        );
+        const ny = Math.max(
+          0,
+          Math.min(dragStart.y + gesture.dy, imageHeight - selH.value),
+        );
         selX.value = nx;
         selY.value = ny;
         setRect(r => ({ ...r, x: nx, y: ny }));
       },
-    })
+    }),
   ).current;
 
   // Corner handles to resize
   const sizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 }).current;
   const MIN_SIZE = 40;
-  const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(v, max));
-  const corner = (name: 'tl'|'tr'|'bl'|'br') => PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onPanResponderGrant: () => {
-      sizeStart.x = selX.value; sizeStart.y = selY.value; sizeStart.w = selW.value; sizeStart.h = selH.value;
-    },
-    onPanResponderMove: (_e, g) => {
-      let nx = sizeStart.x, ny = sizeStart.y, nw = sizeStart.w, nh = sizeStart.h;
-      if (name === 'br') { nw = clamp(sizeStart.w + g.dx, MIN_SIZE, imageWidth - sizeStart.x); nh = clamp(sizeStart.h + g.dy, MIN_SIZE, imageHeight - sizeStart.y); }
-      if (name === 'bl') { nx = clamp(sizeStart.x + g.dx, 0, sizeStart.x + sizeStart.w - MIN_SIZE); nw = clamp(sizeStart.w - (nx - sizeStart.x), MIN_SIZE, imageWidth); nh = clamp(sizeStart.h + g.dy, MIN_SIZE, imageHeight - sizeStart.y); }
-      if (name === 'tr') { ny = clamp(sizeStart.y + g.dy, 0, sizeStart.y + sizeStart.h - MIN_SIZE); nh = clamp(sizeStart.h - (ny - sizeStart.y), MIN_SIZE, imageHeight); nw = clamp(sizeStart.w + g.dx, MIN_SIZE, imageWidth - sizeStart.x); }
-      if (name === 'tl') { nx = clamp(sizeStart.x + g.dx, 0, sizeStart.x + sizeStart.w - MIN_SIZE); ny = clamp(sizeStart.y + g.dy, 0, sizeStart.y + sizeStart.h - MIN_SIZE); nw = clamp(sizeStart.w - (nx - sizeStart.x), MIN_SIZE, imageWidth); nh = clamp(sizeStart.h - (ny - sizeStart.y), MIN_SIZE, imageHeight); }
-      // Ensure inside bounds
-      nx = clamp(nx, 0, imageWidth - nw); ny = clamp(ny, 0, imageHeight - nh);
-      selX.value = nx; selY.value = ny; selW.value = nw; selH.value = nh;
-      setRect({ x: nx, y: ny, width: nw, height: nh });
-    }
-  });
+  const clamp = (v: number, min: number, max: number) =>
+    Math.max(min, Math.min(v, max));
+  const corner = (name: 'tl' | 'tr' | 'bl' | 'br') =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        sizeStart.x = selX.value;
+        sizeStart.y = selY.value;
+        sizeStart.w = selW.value;
+        sizeStart.h = selH.value;
+      },
+      onPanResponderMove: (_e, g) => {
+        let nx = sizeStart.x,
+          ny = sizeStart.y,
+          nw = sizeStart.w,
+          nh = sizeStart.h;
+        if (name === 'br') {
+          nw = clamp(sizeStart.w + g.dx, MIN_SIZE, imageWidth - sizeStart.x);
+          nh = clamp(sizeStart.h + g.dy, MIN_SIZE, imageHeight - sizeStart.y);
+        }
+        if (name === 'bl') {
+          nx = clamp(
+            sizeStart.x + g.dx,
+            0,
+            sizeStart.x + sizeStart.w - MIN_SIZE,
+          );
+          nw = clamp(sizeStart.w - (nx - sizeStart.x), MIN_SIZE, imageWidth);
+          nh = clamp(sizeStart.h + g.dy, MIN_SIZE, imageHeight - sizeStart.y);
+        }
+        if (name === 'tr') {
+          ny = clamp(
+            sizeStart.y + g.dy,
+            0,
+            sizeStart.y + sizeStart.h - MIN_SIZE,
+          );
+          nh = clamp(sizeStart.h - (ny - sizeStart.y), MIN_SIZE, imageHeight);
+          nw = clamp(sizeStart.w + g.dx, MIN_SIZE, imageWidth - sizeStart.x);
+        }
+        if (name === 'tl') {
+          nx = clamp(
+            sizeStart.x + g.dx,
+            0,
+            sizeStart.x + sizeStart.w - MIN_SIZE,
+          );
+          ny = clamp(
+            sizeStart.y + g.dy,
+            0,
+            sizeStart.y + sizeStart.h - MIN_SIZE,
+          );
+          nw = clamp(sizeStart.w - (nx - sizeStart.x), MIN_SIZE, imageWidth);
+          nh = clamp(sizeStart.h - (ny - sizeStart.y), MIN_SIZE, imageHeight);
+        }
+        // Ensure inside bounds
+        nx = clamp(nx, 0, imageWidth - nw);
+        ny = clamp(ny, 0, imageHeight - nh);
+        selX.value = nx;
+        selY.value = ny;
+        selW.value = nw;
+        selH.value = nh;
+        setRect({ x: nx, y: ny, width: nw, height: nh });
+      },
+    });
   const tl = useRef(corner('tl')).current;
   const tr = useRef(corner('tr')).current;
   const bl = useRef(corner('bl')).current;
@@ -143,12 +208,27 @@ export const BlurTool: React.FC<BlurToolProps> = ({
     <View style={styles.container}>
       {/* Stage with image and live masked blur */}
       <View style={styles.stageCard}>
-        <View style={[styles.stage, { width: imageWidth, height: imageHeight }]}>
-          <Image source={{ uri: imageUri }} style={styles.stageImage} resizeMode="contain" />
-          <MaskedBlurPreview uri={imageUri} rect={rect} intensity={intensity} />
+        <View
+          style={[styles.stage, { width: imageWidth, height: imageHeight }]}
+        >
+          <Image
+            source={{ uri: imageUri }}
+            style={styles.stageImage}
+            resizeMode="contain"
+          />
+          <MaskedBlurPreview
+            uri={imageUri}
+            rect={rect}
+            intensity={intensity}
+            canvasWidth={imageWidth}
+            canvasHeight={imageHeight}
+          />
 
           {/* Selection overlay */}
-          <Animated.View style={[styles.selection, overlayStyle]} {...dragResponder.panHandlers}>
+          <Animated.View
+            style={[styles.selection, overlayStyle]}
+            {...dragResponder.panHandlers}
+          >
             <View style={styles.selectionFrame} />
             {/* Handles */}
             <View style={[styles.handle, styles.tl]} {...tl.panHandlers} />
@@ -167,7 +247,7 @@ export const BlurTool: React.FC<BlurToolProps> = ({
         <View style={styles.sliderContainer}>
           <TouchableOpacity
             style={[styles.sliderTrack, { backgroundColor: colors.surface }]}
-            onPress={(event) => {
+            onPress={event => {
               const { locationX } = event.nativeEvent;
               const trackWidth = width - SPACING.xl * 4;
               const newIntensity = Math.round((locationX / trackWidth) * 100);
@@ -197,19 +277,24 @@ export const BlurTool: React.FC<BlurToolProps> = ({
           </TouchableOpacity>
         </View>
         <View style={styles.sliderLabels}>
-          <Text style={[styles.sliderLabel, { color: colors.onSurface }]}>0%</Text>
-          <Text style={[styles.sliderLabel, { color: colors.onSurface }]}>100%</Text>
+          <Text style={[styles.sliderLabel, { color: colors.onSurface }]}>
+            0%
+          </Text>
+          <Text style={[styles.sliderLabel, { color: colors.onSurface }]}>
+            100%
+          </Text>
         </View>
 
         {/* Intensity Preview Bars */}
         <View style={styles.intensityPreview}>
-          {[20, 40, 60, 80, 100].map((value) => (
+          {[20, 40, 60, 80, 100].map(value => (
             <View
               key={value}
               style={[
                 styles.intensityBar,
                 {
-                  backgroundColor: intensity >= value ? colors.primary : colors.surface,
+                  backgroundColor:
+                    intensity >= value ? colors.primary : colors.surface,
                   opacity: intensity >= value ? 1 : 0.3,
                 },
               ]}
@@ -257,7 +342,12 @@ const styles = StyleSheet.create({
   stageImage: { width: '100%', height: '100%' },
   selection: { position: 'absolute' },
   selectionFrame: { flex: 1, borderWidth: 2, borderColor: '#FFFFFF99' },
-  handle: { position: 'absolute', width: 20, height: 20, backgroundColor: '#fff' },
+  handle: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    backgroundColor: '#fff',
+  },
   tl: { top: -10, left: -10 },
   tr: { top: -10, right: -10 },
   bl: { bottom: -10, left: -10 },

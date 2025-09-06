@@ -84,15 +84,28 @@ export const EditorScreen: React.FC = () => {
   // Tool-specific states
   const [textElements, setTextElements] = useState<any[]>([]);
   const [appliedFilters, setAppliedFilters] = useState<any[]>([]);
-  const [pendingFilter, setPendingFilter] = useState<{ id: string; intensity: number } | null>(null);
-  const [extractingFilter, setExtractingFilter] = useState<{ id: string; intensity: number } | null>(null);
-  const [extractingBlur, setExtractingBlur] = useState<{ rect: { x: number; y: number; width: number; height: number }; intensity: number } | null>(null);
+  const [pendingFilter, setPendingFilter] = useState<{
+    id: string;
+    intensity: number;
+  } | null>(null);
+  const [extractingFilter, setExtractingFilter] = useState<{
+    id: string;
+    intensity: number;
+  } | null>(null);
+  const [extractingBlur, setExtractingBlur] = useState<{
+    rect: { x: number; y: number; width: number; height: number };
+    intensity: number;
+  } | null>(null);
   const [blurAreas, setBlurAreas] = useState<any[]>([]);
   const [editHistory, setEditHistory] = useState<any[]>([]);
   const [currentEditIndex, setCurrentEditIndex] = useState(-1);
-  const [imageDimensions, setImageDimensions] = useState<{width: number, height: number} | null>(null);
+  const [imageDimensions, setImageDimensions] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
   // Live preview for filters
-  const { previewUri, isGenerating, generatePreview, clearPreview } = useImagePreview();
+  const { previewUri, isGenerating, generatePreview, clearPreview } =
+    useImagePreview();
 
   // Animation values
   const toolbarTranslateY = useSharedValue(0);
@@ -254,7 +267,9 @@ export const EditorScreen: React.FC = () => {
     console.log('Share');
   };
 
-  const getImageDimensions = async (uri: string): Promise<{width: number, height: number}> => {
+  const getImageDimensions = async (
+    uri: string,
+  ): Promise<{ width: number; height: number }> => {
     return new Promise((resolve, reject) => {
       Image.getSize(
         uri,
@@ -274,9 +289,13 @@ export const EditorScreen: React.FC = () => {
       setSelectedTool(null);
     } else {
       setSelectedTool(toolId);
-      
+
       // If crop/rotate/blur tool is selected, get image dimensions
-      if ((toolId === 'crop' || toolId === 'rotate' || toolId === 'blur') && currentImageUri && !imageDimensions) {
+      if (
+        (toolId === 'crop' || toolId === 'rotate' || toolId === 'blur') &&
+        currentImageUri &&
+        !imageDimensions
+      ) {
         try {
           const dimensions = await getImageDimensions(currentImageUri);
           setImageDimensions(dimensions);
@@ -421,13 +440,14 @@ export const EditorScreen: React.FC = () => {
         case 'filters':
           return (
             <FilterTool
-              imageUri={currentImageUri}
               onFilterSelect={(filterId, intensity) => {
                 setPendingFilter({ id: filterId, intensity });
                 // Live preview handled by FilteredPreview; no need to generate low-res preview here
               }}
               onIntensityChange={intensity => {
-                setPendingFilter(prev => (prev ? { ...prev, intensity } : prev));
+                setPendingFilter(prev =>
+                  prev ? { ...prev, intensity } : prev,
+                );
                 // Live preview handled by FilteredPreview
               }}
               onApply={async () => {
@@ -437,7 +457,10 @@ export const EditorScreen: React.FC = () => {
                   return;
                 }
                 // Trigger hidden extraction, handled below in a hidden component
-                setExtractingFilter({ id: chosen.id, intensity: chosen.intensity });
+                setExtractingFilter({
+                  id: chosen.id,
+                  intensity: chosen.intensity,
+                });
               }}
               onCancel={() => {
                 clearPreview();
@@ -445,7 +468,7 @@ export const EditorScreen: React.FC = () => {
                 setSelectedTool(null);
               }}
             />
-        );
+          );
 
         case 'crop':
           return (
@@ -469,26 +492,37 @@ export const EditorScreen: React.FC = () => {
                     '../services/imageProcessor'
                   );
 
-                  const result = await imageProcessor.processImage(currentImageUri, [
-                    {
-                      type: 'crop',
-                      x: cropData.x,
-                      y: cropData.y,
-                      width: cropData.width,
-                      height: cropData.height,
-                    },
-                  ]);
+                  const result = await imageProcessor.processImage(
+                    currentImageUri,
+                    [
+                      {
+                        type: 'crop',
+                        x: cropData.x,
+                        y: cropData.y,
+                        width: cropData.width,
+                        height: cropData.height,
+                      },
+                    ],
+                  );
 
                   console.log('✅ Crop applied successfully:', result);
 
                   // Update the image URI with the cropped result
-                  if (result.processedUri && result.processedUri !== currentImageUri) {
+                  if (
+                    result.processedUri &&
+                    result.processedUri !== currentImageUri
+                  ) {
                     setCurrentImageUri(result.processedUri);
                     try {
-                      const dims = await getImageDimensions(result.processedUri);
+                      const dims = await getImageDimensions(
+                        result.processedUri,
+                      );
                       setImageDimensions(dims);
                     } catch (_e) {}
-                    console.log('📸 New cropped image URI:', result.processedUri);
+                    console.log(
+                      '📸 New cropped image URI:',
+                      result.processedUri,
+                    );
                   }
 
                   addToHistory({ type: 'CROP', data: cropData });
@@ -757,25 +791,35 @@ export const EditorScreen: React.FC = () => {
               )}
 
               {/* Blur Tool Overlay */}
-              {selectedTool === 'blur' && currentImageUri && imageDimensions && (
-                <View style={styles.blurToolOverlay}>
-                  <BlurToolComponent
-                    imageUri={currentImageUri}
-                    imageWidth={width * 0.8}
-                    imageHeight={height * 0.6}
-                    actualImageWidth={imageDimensions.width}
-                    actualImageHeight={imageDimensions.height}
-                    onApply={(data) => {
-                      const newArea = { id: Date.now().toString(), ...data };
-                      setBlurAreas(prev => [...prev, newArea]);
-                      addToHistory({ type: 'ADD_BLUR', data: newArea });
-                      // Bake final image via extractor component mounted below
-                      setExtractingBlur({ rect: { x: data.x, y: data.y, width: data.width, height: data.height }, intensity: data.intensity });
-                    }}
-                    onCancel={() => setSelectedTool(null)}
-                  />
-                </View>
-              )}
+              {selectedTool === 'blur' &&
+                currentImageUri &&
+                imageDimensions && (
+                  <View style={styles.blurToolOverlay}>
+                    <BlurToolComponent
+                      imageUri={currentImageUri}
+                      imageWidth={width * 0.8}
+                      imageHeight={height * 0.6}
+                      actualImageWidth={imageDimensions.width}
+                      actualImageHeight={imageDimensions.height}
+                      onApply={data => {
+                        const newArea = { id: Date.now().toString(), ...data };
+                        setBlurAreas(prev => [...prev, newArea]);
+                        addToHistory({ type: 'ADD_BLUR', data: newArea });
+                        // Bake final image via extractor component mounted below
+                        setExtractingBlur({
+                          rect: {
+                            x: data.x,
+                            y: data.y,
+                            width: data.width,
+                            height: data.height,
+                          },
+                          intensity: data.intensity,
+                        });
+                      }}
+                      onCancel={() => setSelectedTool(null)}
+                    />
+                  </View>
+                )}
             </View>
           ) : (
             <View style={styles.imagePlaceholder}>
@@ -853,7 +897,7 @@ export const EditorScreen: React.FC = () => {
           uri={currentImageUri}
           filterId={extractingFilter.id}
           intensity={extractingFilter.intensity}
-          onDone={async (uri) => {
+          onDone={async uri => {
             try {
               setCurrentImageUri(uri);
               try {
@@ -875,7 +919,7 @@ export const EditorScreen: React.FC = () => {
               triggerHapticFeedback('heavy');
             }
           }}
-          onError={(msg) => {
+          onError={msg => {
             console.error('Filter extraction error:', msg);
             setExtractingFilter(null);
             Alert.alert('Filter Error', msg || 'Failed to apply filter');
@@ -889,7 +933,7 @@ export const EditorScreen: React.FC = () => {
           uri={currentImageUri}
           rect={extractingBlur.rect}
           intensity={extractingBlur.intensity}
-          onDone={async (uri) => {
+          onDone={async uri => {
             try {
               setCurrentImageUri(uri);
               try {
@@ -902,7 +946,7 @@ export const EditorScreen: React.FC = () => {
               triggerHapticFeedback('heavy');
             }
           }}
-          onError={(msg) => {
+          onError={msg => {
             console.error('Masked blur extraction error:', msg);
             Alert.alert('Blur Error', msg || 'Failed to apply blur');
             setExtractingBlur(null);

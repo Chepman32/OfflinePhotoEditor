@@ -12,10 +12,14 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
+  withSequence,
   interpolate,
 } from 'react-native-reanimated';
 import { useTheme } from '../../utils/theme';
-import { triggerHapticFeedback, useAccessibility } from '../../utils/accessibility';
+import {
+  triggerHapticFeedback,
+  useAccessibility,
+} from '../../utils/accessibility';
 import { ElevatedButton } from '../common/ElevatedButton';
 import { Card } from '../common/Card';
 import { TYPOGRAPHY } from '../../constants/typography';
@@ -79,8 +83,12 @@ export const TextTool: React.FC<TextToolProps> = ({
   const [text, setText] = useState(initialText);
   const [fontSize, setFontSize] = useState(initialFontSize);
   const [selectedColor, setSelectedColor] = useState(initialColor);
-  const [alignment, setAlignment] = useState<'left' | 'center' | 'right'>('center');
-  const [selectedEffect, setSelectedEffect] = useState<'none' | 'shadow' | 'outline'>('none');
+  const [alignment, setAlignment] = useState<'left' | 'center' | 'right'>(
+    'center',
+  );
+  const [selectedEffect, setSelectedEffect] = useState<
+    'none' | 'shadow' | 'outline'
+  >('none');
   const [selectedFont, setSelectedFont] = useState(FONTS[0]);
 
   // Animation values
@@ -96,7 +104,7 @@ export const TextTool: React.FC<TextToolProps> = ({
     if (!reduceMotionEnabled) {
       previewScale.value = withSequence(
         withSpring(1.05, { damping: 10, stiffness: 200 }),
-        withSpring(1, { damping: 15, stiffness: 150 })
+        withSpring(1, { damping: 15, stiffness: 150 }),
       );
     }
   };
@@ -116,7 +124,7 @@ export const TextTool: React.FC<TextToolProps> = ({
     if (!reduceMotionEnabled) {
       previewScale.value = withSequence(
         withSpring(1.1, { damping: 8, stiffness: 300 }),
-        withSpring(1, { damping: 12, stiffness: 200 })
+        withSpring(1, { damping: 12, stiffness: 200 }),
       );
     }
   };
@@ -134,26 +142,25 @@ export const TextTool: React.FC<TextToolProps> = ({
   };
 
   const toggleColorPicker = () => {
-    colorPickerOpacity.value = colorPickerOpacity.value === 0 ? withTiming(1) : withTiming(0);
+    colorPickerOpacity.value =
+      colorPickerOpacity.value === 0 ? withTiming(1) : withTiming(0);
   };
 
   const toggleFontPicker = () => {
-    fontPickerOpacity.value = fontPickerOpacity.value === 0 ? withTiming(1) : withTiming(0);
+    fontPickerOpacity.value =
+      fontPickerOpacity.value === 0 ? withTiming(1) : withTiming(0);
   };
 
   const toggleEffectPicker = () => {
-    effectPickerOpacity.value = effectPickerOpacity.value === 0 ? withTiming(1) : withTiming(0);
+    effectPickerOpacity.value =
+      effectPickerOpacity.value === 0 ? withTiming(1) : withTiming(0);
   };
 
   const colorPickerStyle = useAnimatedStyle(() => ({
     opacity: colorPickerOpacity.value,
     transform: [
       {
-        translateY: interpolate(
-          colorPickerOpacity.value,
-          [0, 1],
-          [-20, 0]
-        ),
+        translateY: interpolate(colorPickerOpacity.value, [0, 1], [-20, 0]),
       },
     ],
   }));
@@ -162,11 +169,7 @@ export const TextTool: React.FC<TextToolProps> = ({
     opacity: fontPickerOpacity.value,
     transform: [
       {
-        translateY: interpolate(
-          fontPickerOpacity.value,
-          [0, 1],
-          [-20, 0]
-        ),
+        translateY: interpolate(fontPickerOpacity.value, [0, 1], [-20, 0]),
       },
     ],
   }));
@@ -175,11 +178,7 @@ export const TextTool: React.FC<TextToolProps> = ({
     opacity: effectPickerOpacity.value,
     transform: [
       {
-        translateY: interpolate(
-          effectPickerOpacity.value,
-          [0, 1],
-          [-20, 0]
-        ),
+        translateY: interpolate(effectPickerOpacity.value, [0, 1], [-20, 0]),
       },
     ],
   }));
@@ -190,10 +189,14 @@ export const TextTool: React.FC<TextToolProps> = ({
 
   const getTextAlignment = () => {
     switch (alignment) {
-      case 'left': return 'left';
-      case 'center': return 'center';
-      case 'right': return 'right';
-      default: return 'center';
+      case 'left':
+        return 'left';
+      case 'center':
+        return 'center';
+      case 'right':
+        return 'right';
+      default:
+        return 'center';
     }
   };
 
@@ -266,7 +269,7 @@ export const TextTool: React.FC<TextToolProps> = ({
         <View style={styles.sliderContainer}>
           <TouchableOpacity
             style={[styles.sliderTrack, { backgroundColor: colors.surface }]}
-            onPress={(event) => {
+            onPress={event => {
               const { locationX } = event.nativeEvent;
               const trackWidth = 280; // Approximate width
               const newSize = Math.round((locationX / trackWidth) * 60 + 12);
@@ -294,8 +297,12 @@ export const TextTool: React.FC<TextToolProps> = ({
           </TouchableOpacity>
         </View>
         <View style={styles.sliderLabels}>
-          <Text style={[styles.sliderLabel, { color: colors.onSurface }]}>12px</Text>
-          <Text style={[styles.sliderLabel, { color: colors.onSurface }]}>72px</Text>
+          <Text style={[styles.sliderLabel, { color: colors.onSurface }]}>
+            12px
+          </Text>
+          <Text style={[styles.sliderLabel, { color: colors.onSurface }]}>
+            72px
+          </Text>
         </View>
       </Card>
 
@@ -308,7 +315,9 @@ export const TextTool: React.FC<TextToolProps> = ({
           <Text style={[styles.pickerTitle, { color: colors.onBackground }]}>
             Color
           </Text>
-          <View style={[styles.colorPreview, { backgroundColor: selectedColor }]} />
+          <View
+            style={[styles.colorPreview, { backgroundColor: selectedColor }]}
+          />
           <Text style={[styles.pickerArrow, { color: colors.onBackground }]}>
             {colorPickerOpacity.value === 0 ? '▼' : '▲'}
           </Text>
@@ -316,7 +325,7 @@ export const TextTool: React.FC<TextToolProps> = ({
 
         <Animated.View style={[styles.colorPicker, colorPickerStyle]}>
           <View style={styles.colorGrid}>
-            {COLORS.map((color) => (
+            {COLORS.map(color => (
               <TouchableOpacity
                 key={color}
                 style={[
@@ -343,13 +352,16 @@ export const TextTool: React.FC<TextToolProps> = ({
             { key: 'left', label: 'Left', icon: '⬅️' },
             { key: 'center', label: 'Center', icon: '⬌' },
             { key: 'right', label: 'Right', icon: '➡️' },
-          ].map((option) => (
+          ].map(option => (
             <TouchableOpacity
               key={option.key}
               style={[
                 styles.alignmentButton,
                 { backgroundColor: colors.surface },
-                alignment === option.key && [styles.alignmentButtonActive, { backgroundColor: colors.primary }],
+                alignment === option.key && [
+                  styles.alignmentButtonActive,
+                  { backgroundColor: colors.primary },
+                ],
               ]}
               onPress={() => handleAlignmentChange(option.key as any)}
             >
@@ -357,7 +369,12 @@ export const TextTool: React.FC<TextToolProps> = ({
               <Text
                 style={[
                   styles.alignmentLabel,
-                  { color: alignment === option.key ? colors.onPrimary : colors.onBackground },
+                  {
+                    color:
+                      alignment === option.key
+                        ? colors.onPrimary
+                        : colors.onBackground,
+                  },
                 ]}
               >
                 {option.label}
@@ -386,13 +403,16 @@ export const TextTool: React.FC<TextToolProps> = ({
 
         <Animated.View style={[styles.effectPicker, effectPickerStyle]}>
           <View style={styles.effectGrid}>
-            {EFFECTS.map((effect) => (
+            {EFFECTS.map(effect => (
               <TouchableOpacity
                 key={effect.id}
                 style={[
                   styles.effectOption,
                   { backgroundColor: colors.surface },
-                  selectedEffect === effect.id && [styles.effectOptionSelected, { backgroundColor: colors.primary + '20' }],
+                  selectedEffect === effect.id && [
+                    styles.effectOptionSelected,
+                    { backgroundColor: colors.primary + '20' },
+                  ],
                 ]}
                 onPress={() => handleEffectChange(effect.id)}
               >
@@ -400,7 +420,12 @@ export const TextTool: React.FC<TextToolProps> = ({
                 <Text
                   style={[
                     styles.effectLabel,
-                    { color: selectedEffect === effect.id ? colors.primary : colors.onBackground },
+                    {
+                      color:
+                        selectedEffect === effect.id
+                          ? colors.primary
+                          : colors.onBackground,
+                    },
                   ]}
                 >
                   {effect.label}
